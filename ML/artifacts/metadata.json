@@ -1,0 +1,37 @@
+{
+  "version": "20260529_230942",
+  "trained_at": "2026-05-29T23:09:42.708316",
+  "features": [
+    "season",
+    "weekday",
+    "temp",
+    "hum",
+    "mq7",
+    "mq135",
+    "ky028_analog",
+    "ky028_digital",
+    "bmp_temp",
+    "pressure",
+    "altitude",
+    "aht21_temp",
+    "aht21_hum",
+    "ens_iaq",
+    "ens_tvoc",
+    "ens_co2"
+  ],
+  "best_params": {
+    "clf__n_estimators": 120,
+    "clf__min_samples_split": 2,
+    "clf__min_samples_leaf": 2,
+    "clf__max_features": "sqrt",
+    "clf__max_depth": 10,
+    "clf__bootstrap": true
+  },
+  "train_rows": 843176,
+  "test_rows": 210794,
+  "train_accuracy": 0.9323308538193686,
+  "test_accuracy": 0.9303538051367686,
+  "train_f1_macro": 0.9076681161451852,
+  "test_f1_macro": 0.9056605302755936,
+  "data_hash": "1da23a0cc3fcad4d1b2327a13657e36ff43ef9a83dbb45292ac3c5de5b97399f"
+}

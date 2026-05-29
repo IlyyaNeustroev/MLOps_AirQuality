@@ -1,0 +1,25 @@
+BEST_PARAMS
+{
+  "clf__n_estimators": 120,
+  "clf__min_samples_split": 2,
+  "clf__min_samples_leaf": 2,
+  "clf__max_features": "sqrt",
+  "clf__max_depth": 10,
+  "clf__bootstrap": true
+}
+
+BEST_CV_SCORE
+0.9040060488119792
+
+CLASSIFICATION_REPORT
+              precision    recall  f1-score   support
+
+           0       0.97      0.98      0.97      7116
+           1       0.92      0.93      0.92     66015
+           2       0.95      0.94      0.94    117369
+           3       0.86      0.89      0.88     17337
+           4       0.72      0.92      0.81      2957
+
+    accuracy                           0.93    210794
+   macro avg       0.88      0.93      0.91    210794
+weighted avg       0.93      0.93      0.93    210794
