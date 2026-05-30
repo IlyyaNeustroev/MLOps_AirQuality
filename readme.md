@@ -51,10 +51,10 @@
 4.  Сохранение в БД
     - Функция save_to_database преобразует и валидирует все поля.
     - Сохраняет запись в таблицу sensor.data PostgreSQL:
-      - сырые данные датчиков;
-      - вычисленные season, weekday;
-      - предсказанный iaq_class;
-      - iaq_proba (JSON с вероятностями классов).
+       - сырые данные датчиков;
+       - вычисленные season, weekday;
+       - предсказанный iaq_class;
+       - iaq_proba (JSON с вероятностями классов).
 5.  Обратная связь
     - Клиент (ESP32 или веб‑интерфейс) получает ответ:
 
@@ -106,7 +106,7 @@ json
 
 4\. Результаты обучения
 
-- Отчёты обучения: в папке reports/: train*report*\*.txt — человекочитаемый отчёт, train*report*\*.json — машинно-читаемая сводка с метриками и classification_report.
+- Отчёты обучения: в папке reports/: train_report_\*.txt — человекочитаемый отчёт, train_report_\*.json — машинно-читаемая сводка с метриками и classification_report.
 - Логи экспериментов: файл monitoring/experiments.jsonl — это построчный JSON - каждая строка — один запуск обучения; Удобно смотреть через jq, Python, VS Code или лог-вьювер.
 
 **3. ETL‑процесс (Extract‑Transform‑Load)**
@@ -120,11 +120,11 @@ json
 2\. Transform (преобразование)
 
 - Вычисление признаков:
-  - season — по месяцу из date (get_season_by_month).
-  - weekday — день недели (isoweekday()).
+   - season — по месяцу из date (get_season_by_month).
+   - weekday — день недели (isoweekday()).
 - Очистка данных:
-  - замена -1 → среднее значение по столбцу (в preprocess_features);
-  - приведение типов (int, float) и подстановка дефолтов (safe_convert).
+   - замена -1 → среднее значение по столбцу (в preprocess_features);
+   - приведение типов (int, float) и подстановка дефолтов (safe_convert).
 - Масштабирование: StandardScaler (обучается при первом обучении модели).
 - Прогноз: классификация iaq_class (0–5) + вероятности.
 - Пост‑обработка: генерация текстовой рекомендации (get_recommendation).
@@ -202,7 +202,7 @@ json
 
 Лог эксперимента:
 
-{"timestamp": "2026-05-29T23:09:42.854997", "rows": 1053970, "best*params": {"clf*\_n*estimators": 120, "clf*\_min*samples_split": 2, "clf*\_min*samples_leaf": 2, "clf*\_max*features": "sqrt", "clf*\_max*depth": 10, "clf*\_bootstrap": true}, "train_accuracy": 0.9323308538193686, "test_accuracy": 0.9303538051367686, "train_f1_macro": 0.9076681161451852, "test_f1_macro": 0.9056605302755936}
+{"timestamp": "2026-05-29T23:09:42.854997", "rows": 1053970, "best_params": {"clf_\_n_estimators": 120, "clf_\_min_samples_split": 2, "clf_\_min_samples_leaf": 2, "clf_\_max_features": "sqrt", "clf_\_max_depth": 10, "clf_\_bootstrap": true}, "train_accuracy": 0.9323308538193686, "test_accuracy": 0.9303538051367686, "train_f1_macro": 0.9076681161451852, "test_f1_macro": 0.9056605302755936}
 
 **5. Тестирование ML-модели**
 
