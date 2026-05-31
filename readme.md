@@ -1,4 +1,4 @@
-**MLAIRQuality – интеллектуальная система контроля качества воздуха в системах вентиляции больших зданий.**
+# MLAIRQuality – интеллектуальная система контроля качества воздуха в системах вентиляции больших зданий. #
 
 Авторы:
 
@@ -10,7 +10,9 @@
 
 Савельев Денис
 
-**Описание бизнес-задачи**
+___
+
+## Описание бизнес-задачи ##
 
 Коротко о том, в чем состоит проблема и почему эту задачу можно решить с помощью ML-модели.
 
@@ -30,7 +32,9 @@
 
 В каждом помещении имеется Arduino с датчиками с wi-fi модулем и клапаном на сервоприводе. С настраиваемой частотой Arduino передает данные с датчиков на web-сервер, на котором запущено наше приложение с ML-моделью. Эти приложение накапливает статистику, периодически переобучает модель и выполняет предикт индекса качества воздуха в отдельном помещении. Если он понизился, мы знаем где, посылаем json Arduino с командой открыть клапан и json контроллеру вентилятора, это тоже Arduino с wi-fi модулем и мощными твердотельными реле (мощная нагрузка до 10-100 КВт).
 
-**Описание схемы пайплайна**
+---
+
+## Описание схемы пайплайна ##
 
 ![Схема пайплайна](images/2.jpg)
 
@@ -135,7 +139,9 @@ json
 - Поля: все сырые и вычисленные признаки + iaq_class, iaq_proba, packet_count.
 - Формат: структурированная запись с временными метками и метаданными комнаты.
 
-**4. Архитектура ML‑модели**
+---
+
+## Архитектура ML‑модели ##
 
 Модель: RandomForestClassifier (sklearn)
 
@@ -204,7 +210,9 @@ json
 
 {"timestamp": "2026-05-29T23:09:42.854997", "rows": 1053970, "best_params": {"clf_\_n_estimators": 120, "clf_\_min_samples_split": 2, "clf_\_min_samples_leaf": 2, "clf_\_max_features": "sqrt", "clf_\_max_depth": 10, "clf_\_bootstrap": true}, "train_accuracy": 0.9323308538193686, "test_accuracy": 0.9303538051367686, "train_f1_macro": 0.9076681161451852, "test_f1_macro": 0.9056605302755936}
 
-**5. Тестирование ML-модели**
+---
+
+## Тестирование ML-модели ##
 
 1. Модель
 
@@ -231,3 +239,336 @@ json
 - monitoring/experiments.jsonl;
 - monitoring/predictions.jsonl;
 - monitoring/drift\_\*.csv.
+
+### Инструкции ###
+Тестирование реализовано с помощью pytest. Тесты находятся в папке tests/:
+``` 
+test_air_quality_predictor.py - загрузка модели, preprocess_features(), predict(), fit()
+test_api.py                   - тесты Flask-эндпоинтов
+test_monitoring.py            - проверка записи артефактов
+
+Запуск тестов: pytest tests/ -v
+```
+---
+
+## Docker-контейнеризация ##
+
+Структура проекта:
+
+```text
+MLOps_AirQuality/
+├── docker-compose.yml
+├── .github/
+│   └── workflows/
+│       └── ci-cd.yml
+├── TESTS/
+│   ├── requirements.txt
+│   ├── test_air_quality_ml.py
+│   └── test_flask_api.py
+├── FRONTEND/
+│   └── web-server/
+│       └── server.py          # основной Flask-сервер (порт 5000)
+├── ML/
+│   ├── Dockerfile
+│   ├── requirements.txt
+│   ├── air_quality_ml.py      # AirQualityPredictor + Flask (порт 5001)
+│   ├── artifacts/
+│   ├── monitoring/
+│   ├── reports/
+│   └── testdata/
+└── sql/
+    └── init.sql
+```
+#### ML-сервис Dockerfile (ML/Dockerfile)
+```text
+FROM python:3.10-slim
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    postgresql-client \
+    gcc \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY . .
+
+RUN mkdir -p artifacts monitoring reports
+
+EXPOSE 5001
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:5001/monitoring/health || exit 1
+
+CMD ["python", "air_quality_ml.py"]
+```
+
+#### Главный Flask-сервис Dockerfile (FRONTEND/web-server/Dockerfile)
+```text
+FROM python:3.10-slim
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    postgresql-client \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY . .
+
+EXPOSE 5000
+
+HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
+    CMD curl -f http://localhost:5000/health || exit 1
+
+CMD ["python", "server.py"]
+```
+
+#### docker-compose.yml
+```text
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: air_quality_db
+    environment:
+      POSTGRES_DB: AirQualityMLDB
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: 1187
+      POSTGRES_PORT: 5432
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./sql/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  ml-service:
+    build:
+      context: ./ML
+      dockerfile: Dockerfile
+    container_name: air_quality_ml
+    ports:
+      - "5001:5001"
+    environment:
+      - FAST_MODE=True
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=AirQualityMLDB
+      - DB_USER=postgres
+      - DB_PASSWORD=1187
+    volumes:
+      - ./ML/artifacts:/app/artifacts
+      - ./ML/reports:/app/reports
+      - ./ML/monitoring:/app/monitoring
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  main-service:
+    build:
+      context: ./FRONTEND/web-server
+      dockerfile: Dockerfile
+    container_name: air_quality_main
+    ports:
+      - "5000:5000"
+    environment:
+      - ML_SERVICE_URL=http://ml-service:5001
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=AirQualityMLDB
+      - DB_USER=postgres
+      - DB_PASSWORD=1187
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ml-service:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+```
+
+#### Сборка и запуск
+```text
+# Сборка всех образов
+docker compose build
+
+# Запуск всех сервисов
+docker compose up --build
+
+# Запуск только ML-сервиса в фоне
+docker compose up -d ml-service
+
+# Запуск тестов в контейнере
+docker compose run --rm ml-service pytest /app/../TESTS/ -v
+
+# Остановка
+docker compose down
+
+# Полная очистка (с volumes)
+docker compose down -v
+```
+---
+
+
+## Инструкции
+#### Настроен workflow в .github/workflows/ci-cd.yml:
+```text
+name: Air Quality Ventilation CI/CD
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  test-ml:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+    
+    - name: Install ML dependencies
+      run: |
+        cd ML
+        pip install -r requirements.txt
+    
+    - name: Install test dependencies
+      run: |
+        cd TESTS
+        pip install -r requirements.txt
+    
+    - name: Run tests
+      run: |
+        cd TESTS
+        pytest -v
+    
+    - name: Run ML pipeline (fast mode)
+      run: |
+        cd ML
+        FAST_MODE=True python air_quality_ml.py &
+        sleep 10
+        curl -f http://localhost:5001/monitoring/health
+    
+    - name: Upload model artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: ml-models
+        path: ML/artifacts/
+
+  test-main:
+    runs-on: ubuntu-latest
+    needs: test-ml
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+    
+    - name: Install main dependencies
+      run: |
+        cd FRONTEND/web-server
+        pip install -r requirements.txt
+    
+    - name: Run tests
+      run: |
+        cd TESTS
+        pytest test_flask_api.py -v
+
+  build-docker:
+    needs: [test-ml, test-main]
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Build Docker Compose
+      run: |
+        docker compose build
+    
+    - name: Test ML container
+      run: |
+        docker compose up -d ml-service postgres
+        sleep 30
+        docker compose exec ml-service pytest /app/../TESTS/ -v
+    
+    - name: Test main container
+      run: |
+        docker compose up -d main-service
+        sleep 10
+        curl -f http://localhost:5000/health
+    
+    - name: Push to Docker Hub (optional)
+      if: github.ref == 'refs/heads/main'
+      run: |
+        echo "Push to Docker Hub configured"
+```
+
+### Git-команды для публикации
+```text
+cd MLOps_AirQuality
+git init
+git add .
+git commit -m "Initial commit: Air Quality Ventilation System with Docker + CI/CD"
+git branch -M main
+git remote add origin https://github.com/IlyyaNeustroev/MLOps_AirQuality.git
+git push -u origin main
+```
+### Установка и запуск
+#### Локальный запуск (без Docker)
+```text
+git clone https://github.com/IlyyaNeustroev/MLOps_AirQuality.git
+cd MLOps_AirQuality
+
+# Запуск PostgreSQL
+docker run -d \
+  --name air_quality_db \
+  -e POSTGRES_DB=AirQualityMLDB \
+  -e POSTGRES_USER=postgres \
+  -e POSTGRES_PASSWORD=1187 \
+  -p 5432:5432 \
+  postgres:15-alpine
+
+# ML-сервис
+cd ML
+pip install -r requirements.txt
+python air_quality_ml.py
+
+# В другом терминале — главный сервис
+cd ../FRONTEND/web-server
+pip install -r requirements.txt
+python server.py
+
+# Тесты
+cd ../../TESTS
+pip install -r requirements.txt
+pytest -v
+```
+
+#### Запуск через Docker Compose
+```text
+git clone https://github.com/IlyyaNeustroev/MLOps_AirQuality.git
+cd MLOps_AirQuality
+docker compose up --build
+```
