@@ -1,0 +1,69 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: air_quality_db
+    environment:
+      POSTGRES_DB: AirQualityMLDB
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: 1187
+      POSTGRES_PORT: 5432
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./sql/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  ml-service:
+    build:
+      context: ./ML
+      dockerfile: Dockerfile
+    container_name: air_quality_ml
+    ports:
+      - "5001:5001"
+    environment:
+      - FAST_MODE=True
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=AirQualityMLDB
+      - DB_USER=postgres
+      - DB_PASSWORD=1187
+    volumes:
+      - ./ML/artifacts:/app/artifacts
+      - ./ML/reports:/app/reports
+      - ./ML/monitoring:/app/monitoring
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  main-service:
+    build:
+      context: ./FRONTEND/web-server
+      dockerfile: Dockerfile
+    container_name: air_quality_main
+    ports:
+      - "5000:5000"
+    environment:
+      - ML_SERVICE_URL=http://ml-service:5001
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=AirQualityMLDB
+      - DB_USER=postgres
+      - DB_PASSWORD=1187
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ml-service:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
