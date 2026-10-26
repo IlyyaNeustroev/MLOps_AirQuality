@@ -1,0 +1,58 @@
+# Хуки pre-commit. Установка: poetry run pre-commit install --install-hooks
+# Проверка всего репозитория: poetry run pre-commit run --all-files
+default_language_version:
+  python: python3.13
+default_install_hook_types: [pre-commit, pre-push]
+exclude: ^(DA/|images/|.*\.(pdf|pptx|docx)$)
+
+repos:
+  # 1. Базовая гигиена файлов
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+        args: [--markdown-linebreak-ext=md]
+      - id: end-of-file-fixer
+      - id: mixed-line-ending
+        args: [--fix=lf]
+      - id: check-yaml
+      - id: check-toml
+      - id: check-json
+      - id: check-merge-conflict
+      - id: check-case-conflict        # ловит TESTS/tests на Windows
+      - id: detect-private-key
+      - id: check-added-large-files     # не даст закоммитить датасет/модель > 1 МБ
+        args: [--maxkb=1024]
+      - id: debug-statements
+
+  # 2. Ruff: линтер (с автоисправлением) и форматтер
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.17.2
+    hooks:
+      - id: ruff-check
+        args: [--fix]
+      - id: ruff-format
+
+  # 3. Poetry: pyproject.toml валиден и poetry.lock ему соответствует
+  - repo: https://github.com/python-poetry/poetry
+    rev: 2.5.1
+    hooks:
+      - id: poetry-check
+        args: [--lock]
+
+  # 4. Локальные хуки: используют .venv проекта (те же версии, что в poetry.lock)
+  - repo: local
+    hooks:
+      - id: mypy
+        name: mypy
+        entry: poetry run mypy
+        language: system
+        types: [python]
+        pass_filenames: false
+      - id: pytest
+        name: pytest (перед push)
+        entry: poetry run pytest -q
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-push]

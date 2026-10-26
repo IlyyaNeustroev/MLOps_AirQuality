@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html><head><title>Умная вентиляция</title><meta charset="utf-8">
+<style>
+body{font-family:Arial,sans-serif;margin:20px;background:#f5f5f5;}
+.sensor-card{border:1px solid #ddd;padding:15px;margin:10px 0;border-radius:8px;background:white;box-shadow:0 2px 5px rgba(0,0,0,0.1);}
+.value{font-size:1.5em;font-weight:bold;color:#333;}
+.timestamp{color:#666;font-style:italic;}
+h1{color:#2c3e50;text-align:center;}
+.packet-counter{background:#e7f3ff;padding:15px;border-radius:10px;margin:20px 0;text-align:center;font-weight:bold;font-size:1.2em;border:2px solid #2196F3;}
+.info-card{background:#e3f2fd;padding:15px;border-radius:10px;margin:20px 0;border-left:5px solid #2196F3;}
+.iaq-card{background:linear-gradient(135deg, #4CAF50, #8BC34A);color:white;padding:20px;border-radius:15px;margin:20px 0;text-align:center;box-shadow:0 4px 15px rgba(76,175,80,0.3);}
+.iaq-bad{background:linear-gradient(135deg, #FF9800, #F57C00);box-shadow:0 4px 15px rgba(255,152,0,0.3);}
+.iaq-worst{background:linear-gradient(135deg, #F44336, #D32F2F);box-shadow:0 4px 15px rgba(244,67,54,0.3);}
+</style>
+</head><body>
+<h1>📊 Умная вентиляция</h1>
+<div class="packet-counter">📦 Пакетов: <span class="value">{{ packet_count }}</span> | Последние данные: {{ timestamp }}</div>
+
+<div class="info-card">
+<h3>🏠 Комната</h3>
+<p>№: {{ room_id }} | {{ date }} {{ time }} | {{ season_name }}({{ season }}) | {{ weekday_name }}({{ weekday }})</p>
+</div>
+
+<!-- ✅ IAQ КАРТОЧКА -->
+<div class="iaq-card {% if iaq_class == 0 %}iaq-good{% elif iaq_class >= 4 %}iaq-worst{% elif iaq_class >= 3 %}iaq-bad{% endif %}">
+<h2>🌬️ IAQ: <span class="value">{{ iaq_class }}</span>/5</h2>
+<p><strong>{{ recommendation }}</strong></p>
+{% if iaq_proba %}
+<p>Уверенность: {{ "{:.0%}".format((iaq_proba|max)|float) }}</p>
+{% endif %}
+</div>
+
+<div class="sensor-card"><h4>🌡️ Темп:</h4><p class="value">{{ temp }}°C</p></div>
+<div class="sensor-card"><h4>💧 Влаж:</h4><p class="value">{{ hum }}%</p></div>
+<div class="sensor-card"><h4>💨 CO MQ7:</h4><p class="value">{{ mq7 }}</p></div>
+<div class="sensor-card"><h4>🌫 MQ135:</h4><p class="value">{{ mq135 }}</p></div>
+<div class="sensor-card"><h4>☀️ KY028 A:</h4><p class="value">{{ ky028_analog }}</p></div>
+<div class="sensor-card"><h4>💡 KY028 D:</h4><p class="value">{{ ky028_digital }}</p></div>
+<div class="sensor-card"><h4>🌡️ BMP T:</h4><p class="value">{{ bmp_temp }}°C</p></div>
+<div class="sensor-card"><h4>🌀 Давл:</h4><p class="value">{{ pressure }}</p></div>
+<div class="sensor-card"><h4>🪂 Выс:</h4><p class="value">{{ altitude }}</p></div>
+<div class="sensor-card"><h4>🌡️ AHT21 T:</h4><p class="value">{{ aht21_temp }}°C</p></div>
+<div class="sensor-card"><h4>💦 AHT21 H:</h4><p class="value">{{ aht21_hum }}%</p></div>
+<div class="sensor-card"><h4>ENS IAQ:</h4><p class="value">{{ ens_iaq }}</p></div>
+<div class="sensor-card"><h4>TVOC:</h4><p class="value">{{ ens_tvoc }}</p></div>
+<div class="sensor-card"><h4>CO₂:</h4><p class="value">{{ ens_co2 }}</p></div>
+
+<!-- График последних 24ч IAQ -->
+<div style="margin:20px 0;padding:20px;background:white;border-radius:10px;">
+<h3>📈 IAQ за 24ч</h3>
+<canvas id="iaqChart" width="400" height="200"></canvas>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+const ctx = document.getElementById('iaqChart').getContext('2d');
+new Chart(ctx, {
+  type: 'line', data: {
+    labels: {{ recent_iaq_labels|tojson }},
+    datasets: [{label: 'IAQ класс', data: {{ recent_iaq_data|tojson }},
+                borderColor: '#2196F3', backgroundColor: 'rgba(33,150,244,0.1)', fill: true,
+                tension: 0.4}]
+  }, options: {
+    scales: {y: {min: 0, max: 5, ticks: {stepSize: 1}}},
+    plugins: {title: {display: true, text: 'Последние измерения'}}
+  }
+});
+</script>
+</div>
+</body></html>
