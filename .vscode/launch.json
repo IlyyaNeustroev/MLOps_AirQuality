@@ -1,0 +1,39 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "ML-сервис (Flask, порт 5001)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "flask",
+      "args": ["--app", "airquality.ml_service.app:create_app()", "run", "--port", "5001", "--no-reload"],
+      "envFile": "${workspaceFolder}/.env",
+      "justMyCode": true
+    },
+    {
+      "name": "Веб-сервер (Flask, порт 5000)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "flask",
+      "args": ["--app", "airquality.web.app:create_app()", "run", "--port", "5000", "--no-reload"],
+      "envFile": "${workspaceFolder}/.env",
+      "justMyCode": true
+    },
+    {
+      "name": "Обучение модели",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "airquality.cli",
+      "args": ["--data", "data/air_quality_training_dataset_2.csv"],
+      "envFile": "${workspaceFolder}/.env"
+    },
+    {
+      "name": "pytest: текущий файл",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "pytest",
+      "args": ["${file}", "-q"],
+      "justMyCode": false
+    }
+  ]
+}

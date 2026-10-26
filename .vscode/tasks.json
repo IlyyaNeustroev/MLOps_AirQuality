@@ -1,0 +1,9 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    { "label": "Lint (ruff)", "type": "shell", "command": "poetry run ruff check --fix . ; poetry run ruff format .", "problemMatcher": [] },
+    { "label": "Типы (mypy)", "type": "shell", "command": "poetry run mypy", "problemMatcher": [] },
+    { "label": "Тесты (pytest + coverage)", "type": "shell", "command": "poetry run pytest --cov", "group": { "kind": "test", "isDefault": true }, "problemMatcher": [] },
+    { "label": "pre-commit: все файлы", "type": "shell", "command": "poetry run pre-commit run --all-files", "problemMatcher": [] }
+  ]
+}

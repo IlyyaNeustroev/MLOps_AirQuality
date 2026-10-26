@@ -1,0 +1,71 @@
+name: Air Quality CI/CD
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version-file: .python-version
+
+      - name: Install Poetry
+        run: pipx install poetry==2.5.1
+
+      - name: Cache .venv
+        uses: actions/cache@v4
+        with:
+          path: .venv
+          key: venv-${{ runner.os }}-${{ hashFiles('poetry.lock') }}
+
+      - name: Install dependencies
+        run: |
+          poetry config virtualenvs.in-project true
+          poetry install
+
+      - name: pre-commit (ruff, mypy, проверки файлов)
+        run: poetry run pre-commit run --all-files --show-diff-on-failure
+
+      - name: Tests
+        run: poetry run pytest --cov --cov-report=xml
+
+      - name: Smoke test — обучение и запуск ML-сервиса
+        run: |
+          poetry run python -c "from airquality.ml.synthetic import generate_sensor_data as g; g(n=500).to_csv('data/ci.csv', index=False)"
+          poetry run airquality-train --data data/ci.csv --iter 1
+          poetry run airquality-serve-ml &
+          sleep 8
+          curl -f http://localhost:5001/health
+
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage.xml
+
+  build-docker:
+    needs: lint-and-test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare .env for CI
+        run: cp .env.example .env
+      - name: Build images
+        run: docker compose build
+      - name: Start stack
+        run: docker compose up -d --wait
+      - name: Health checks
+        run: |
+          curl -f http://localhost:5001/health
+          curl -f http://localhost:5000/health
+      - name: Logs on failure
+        if: failure()
+        run: docker compose logs

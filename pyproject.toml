@@ -1,0 +1,146 @@
+[project]
+name = "airquality"
+version = "1.0.0"
+description = "MLAIRQuality — интеллектуальная система контроля качества воздуха в системах вентиляции больших зданий"
+authors = [
+    { name = "Неустроев Илья" },
+    { name = "Харлов Максим" },
+    { name = "Лещишин Роман" },
+    { name = "Савельев Денис" },
+]
+readme = "readme.md"
+requires-python = ">=3.13,<3.14"
+dependencies = [
+    "flask (>=3.1.3,<4.0.0)",
+    "flask-cors (>=6.0.5,<7.0.0)",
+    "numpy (>=2.5.4,<3.0.0)",
+    "pandas (>=3.1.0,<4.0.0)",
+    "scikit-learn (>=1.9.1,<2.0.0)",
+    "joblib (>=1.6.0,<2.0.0)",
+    "psycopg2-binary (>=2.9.13,<3.0.0)",
+    "requests (>=2.34.2,<3.0.0)",
+    "pydantic (>=2.14.1,<3.0.0)",
+    "pydantic-settings (>=2.16.1,<3.0.0)",
+    "waitress (>=3.0.2,<4.0.0)",
+    "gunicorn (>=26.2.0,<27.0.0) ; sys_platform != \"win32\""
+]
+
+[project.scripts]
+airquality-train = "airquality.cli:train"
+airquality-serve-ml = "airquality.cli:serve_ml"
+airquality-serve-web = "airquality.cli:serve_web"
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry]
+packages = [{ include = "airquality", from = "src" }]
+requires-poetry = ">=2.0"
+
+[dependency-groups]
+dev = [
+    "ruff (>=0.17.2,<0.18.0)",
+    "mypy (>=2.4.0,<3.0.0)",
+    "pytest (>=9.1.1,<10.0.0)",
+    "pytest-cov (>=7.1.0,<8.0.0)",
+    "pre-commit (>=4.7.0,<5.0.0)",
+    "pandas-stubs (>=3.0.5.260914,<4.0.0.0)",
+    "types-requests (>=2.33.0.20261006,<3.0.0.0)",
+    "types-psycopg2 (>=2.9.21.20261008,<3.0.0.0)"
+]
+tracking = [
+    "mlflow (>=3.17.2,<4.0.0)"
+]
+viz = [
+    "matplotlib (>=3.11.2,<4.0.0)",
+    "seaborn (>=0.13.2,<0.14.0)"
+]
+
+# Необязательные группы: ставятся только по запросу
+#   poetry install --with tracking   (MLflow)
+#   poetry install --with viz        (графики для отчётов)
+[tool.poetry.group.tracking]
+optional = true
+
+[tool.poetry.group.viz]
+optional = true
+
+# ---------------------------------------------------------------- Ruff
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+src = ["src", "tests"]
+extend-exclude = ["DA", "scripts"]
+
+[tool.ruff.lint]
+select = [
+    "E", "W",   # pycodestyle
+    "F",        # pyflakes: неиспользуемые импорты/переменные
+    "I",        # isort: порядок импортов
+    "N",        # pep8-naming
+    "UP",       # pyupgrade: современный синтаксис
+    "B",        # bugbear: типичные ошибки
+    "S",        # bandit: безопасность
+    "SIM",      # упрощения
+    "C4",       # comprehensions
+    "DTZ",      # datetime без таймзоны
+    "T20",      # запрет print
+    "PL",       # pylint
+    "PD",       # pandas-vet
+    "NPY",      # numpy
+    "PT",       # стиль pytest
+    "RUF",
+]
+ignore = [
+    "PLR0913",  # много аргументов — норма для ML-функций
+    "DTZ005",   # datetime.now() без tz: в проекте локальное время здания
+    "RUF001", "RUF002", "RUF003",  # кириллица в строках/комментариях — не ошибка
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "PLR2004"]
+# Перенесённый legacy-код дашборда: длинные функции и динамический SQL — отдельная задача
+"src/airquality/web/dashboard.py" = ["PLR0911", "PLR0912", "PLR0915", "S608", "E501", "BLE001", "C901", "PLR2004"]
+
+[tool.ruff.format]
+quote-style = "double"
+
+# ---------------------------------------------------------------- mypy
+[tool.mypy]
+python_version = "3.13"
+files = ["src", "tests"]
+strict = true
+warn_unreachable = true
+plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+module = ["sklearn.*", "joblib.*", "mlflow.*", "flask_cors.*", "waitress.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# legacy-модуль: проверяем, но без требования аннотаций
+module = ["airquality.web.dashboard"]
+disallow_untyped_defs = false
+disallow_untyped_calls = false
+disallow_any_generics = false
+disable_error_code = ["index", "call-overload", "assignment", "arg-type"]
+
+# ---------------------------------------------------------------- pytest
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
+markers = [
+    "slow: долгие тесты (обучение модели)",
+    "integration: тесты, требующие запущенного PostgreSQL",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["airquality"]
+omit = ["src/airquality/web/dashboard.py", "src/airquality/cli.py"]
+
+[tool.coverage.report]
+fail_under = 70
+show_missing = true
+skip_covered = true

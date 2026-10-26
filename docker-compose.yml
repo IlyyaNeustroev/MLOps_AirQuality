@@ -1,21 +1,20 @@
-version: '3.8'
-
+# Запуск:  docker compose up -d --build
+# Пароли и параметры берутся из .env (шаблон — .env.example).
 services:
   postgres:
     image: postgres:15-alpine
     container_name: air_quality_db
     environment:
-      POSTGRES_DB: AirQualityMLDB
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: 1187
-      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./sql/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./sql/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -23,22 +22,19 @@ services:
 
   ml-service:
     build:
-      context: ./ML
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: docker/ml.Dockerfile
     container_name: air_quality_ml
+    env_file: .env
+    environment:
+      DB_HOST: postgres          # внутри сети compose — имя сервиса, не localhost
     ports:
       - "5001:5001"
-    environment:
-      - FAST_MODE=True
-      - DB_HOST=postgres
-      - DB_PORT=5432
-      - DB_NAME=AirQualityMLDB
-      - DB_USER=postgres
-      - DB_PASSWORD=1187
     volumes:
-      - ./ML/artifacts:/app/artifacts
-      - ./ML/reports:/app/reports
-      - ./ML/monitoring:/app/monitoring
+      - ./artifacts:/app/artifacts
+      - ./reports:/app/reports
+      - ./monitoring:/app/monitoring
+      - ./data:/app/data:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -46,18 +42,15 @@ services:
 
   main-service:
     build:
-      context: ./FRONTEND/web-server
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: docker/web.Dockerfile
     container_name: air_quality_main
+    env_file: .env
+    environment:
+      DB_HOST: postgres
+      ML_SERVICE_URL: http://ml-service:5001
     ports:
       - "5000:5000"
-    environment:
-      - ML_SERVICE_URL=http://ml-service:5001
-      - DB_HOST=postgres
-      - DB_PORT=5432
-      - DB_NAME=AirQualityMLDB
-      - DB_USER=postgres
-      - DB_PASSWORD=1187
     depends_on:
       postgres:
         condition: service_healthy

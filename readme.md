@@ -242,7 +242,7 @@ json
 
 ### Инструкции ###
 Тестирование реализовано с помощью pytest. Тесты находятся в папке tests/:
-``` 
+```
 test_air_quality_predictor.py - загрузка модели, preprocess_features(), predict(), fit()
 test_api.py                   - тесты Flask-эндпоинтов
 test_monitoring.py            - проверка записи артефактов
@@ -442,34 +442,34 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v3
-    
+
     - name: Setup Python
       uses: actions/setup-python@v4
       with:
         python-version: '3.10'
-    
+
     - name: Install ML dependencies
       run: |
         cd ML
         pip install -r requirements.txt
-    
+
     - name: Install test dependencies
       run: |
         cd TESTS
         pip install -r requirements.txt
-    
+
     - name: Run tests
       run: |
         cd TESTS
         pytest -v
-    
+
     - name: Run ML pipeline (fast mode)
       run: |
         cd ML
         FAST_MODE=True python air_quality_ml.py &
         sleep 10
         curl -f http://localhost:5001/monitoring/health
-    
+
     - name: Upload model artifacts
       uses: actions/upload-artifact@v3
       with:
@@ -481,17 +481,17 @@ jobs:
     needs: test-ml
     steps:
     - uses: actions/checkout@v3
-    
+
     - name: Setup Python
       uses: actions/setup-python@v4
       with:
         python-version: '3.10'
-    
+
     - name: Install main dependencies
       run: |
         cd FRONTEND/web-server
         pip install -r requirements.txt
-    
+
     - name: Run tests
       run: |
         cd TESTS
@@ -502,23 +502,23 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v3
-    
+
     - name: Build Docker Compose
       run: |
         docker compose build
-    
+
     - name: Test ML container
       run: |
         docker compose up -d ml-service postgres
         sleep 30
         docker compose exec ml-service pytest /app/../TESTS/ -v
-    
+
     - name: Test main container
       run: |
         docker compose up -d main-service
         sleep 10
         curl -f http://localhost:5000/health
-    
+
     - name: Push to Docker Hub (optional)
       if: github.ref == 'refs/heads/main'
       run: |
@@ -572,3 +572,19 @@ git clone https://github.com/IlyyaNeustroev/MLOps_AirQuality.git
 cd MLOps_AirQuality
 docker compose up --build
 ```
+
+## Разработка (после рефакторинга)
+
+Требования: Python 3.13, Poetry 2.5.1, Git, VS Code.
+
+```powershell
+poetry config virtualenvs.in-project true --local
+poetry install                       # основные + dev-зависимости в .venv
+poetry install --with tracking,viz   # + MLflow и графики (по желанию)
+poetry run pre-commit install --install-hooks
+Copy-Item .env.example .env          # затем отредактировать пароль БД
+poetry run pytest --cov
+```
+
+Запуск: `poetry run airquality-train --data data/<файл>.csv`, `poetry run airquality-serve-ml`,
+`poetry run airquality-serve-web`; в Docker — `docker compose up -d --build`.
