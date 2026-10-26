@@ -22,11 +22,11 @@ ___
 
 - перерасход энергии, когда вентиляция работает там, где не нужно (в отдельных помещениях);
 - неравномерное качество воздуха. Такая ситуация возникает, когда факторы загрязнения распределяются по зданию неравномерно, а система вентиляции работает равномерно централизованно;
-- износ оборудования. Это следствие пустопорожней работы; 
+- износ оборудования. Это следствие пустопорожней работы;
 - ручная регулировка – зависимость от человеческого фактора. Часто вентиляция запитана от света в помещениях, который используется как признак присутствия человека. Однако фактором загрязнения может быть не только человек (скоропортящейся продукты, химические вещества);
 - Потери тепла через рекуператор. Довольно часто в приточно-вытяжных системах вентиляции используют рекуператоры для того, чтобы в теплообменнике нагреть приточный воздух вытяжным. Раз мы все равно нагретый вытяжной воздух выбрасываем в атмосферу, то рационально будет нагреть им напоследок приточный воздух. Однако, в классических системах, нагретый воздух может попусту уходить в вытяжку из помещения, ведь система работает централизованно и там, где не требуется;
 
-Имеются магистральные воздуховоды приточной и вытяжной вентиляции, от которых выполнены ответвления в отдельные помещения:
+Имеются магистральные воздуховоды приточной и вытяжной вентиляции, от которых выполнены ответвления в отдельные помещения:
 
 ![Архитектура системы](images/1.jpg)
 
@@ -41,60 +41,55 @@ ___
 **1. Полный цикл данных:**
 
 1.  Сбор данных
-    - ESP32 отправляет JSON‑пакеты с показаниями датчиков на Flask‑сервер (эндпоинт /data).
-    - В пакете: room_id, дата/время, показания датчиков (temp, hum, mq7 и т. д.).
+    - ESP32 отправляет JSON‑пакеты с показаниями датчиков на Flask‑сервер (эндпоинт /data).
+    - В пакете: room_id, дата/время, показания датчиков (temp, hum, mq7 и т. д.).
 2.  Предварительная обработка
-    - Сервер извлекает дату из поля date, вычисляет season (по месяцу) и weekday (день недели).
-    - Обновляет глобальное хранилище last_data последними значениями.
+    - Сервер извлекает дату из поля date, вычисляет season (по месяцу) и weekday (день недели).
+    - Обновляет состояние своей комнаты (`SensorState`: отдельная запись на каждую комнату, доступ под блокировкой — данные разных помещений не смешиваются).
 3.  Прогноз ML‑модели
-    - Модель (AirQualityPredictor) получает данные из last_data.
-    - Заменяет значения -1 на средние (метод preprocess_features).
-    - Масштабирует признаки через StandardScaler.
-    - Классифицирует качество воздуха (iaq_class от 0 до 5) и возвращает вероятности классов.
+    - Веб-сервер передаёт данные комнаты ML-сервису по HTTP (`POST /predict`, адрес из `ML_SERVICE_URL`). Если ML-сервис недоступен, ответ содержит `iaq_class = -1` и `ML off`, приём данных не останавливается.
+    - ML-сервис заменяет значения -1 и пропуски на средние (`preprocess_features`).
+    - Пайплайн sklearn: SimpleImputer → StandardScaler → RandomForestClassifier (скалер хранится внутри модели, поэтому не может «разойтись» с ней).
+    - Классифицирует качество воздуха (iaq_class от 0 до 5) и возвращает вероятности классов.
     - Добавляет рекомендацию (recommendation) на основе класса.
 4.  Сохранение в БД
-    - Функция save_to_database преобразует и валидирует все поля.
-    - Сохраняет запись в таблицу sensor.data PostgreSQL:
+    - Функция `build_measurement_record` приводит типы и подставляет значения по умолчанию, `save_measurement` выполняет параметризованный INSERT.
+    - Сохраняет запись в таблицу sensor.data PostgreSQL:
        - сырые данные датчиков;
-       - вычисленные season, weekday;
-       - предсказанный iaq_class;
-       - iaq_proba (JSON с вероятностями классов).
+       - вычисленные season, weekday;
+       - предсказанный iaq_class;
+       - iaq_proba (JSON с вероятностями классов).
 5.  Обратная связь
     - Клиент (ESP32 или веб‑интерфейс) получает ответ:
 
-json
-
+```json
 {
-
-"status": "success",
-
-"packet_number": 123,
-
-"iaq_class": 2,
-
-"recommendation": "Удовл."
-
+  "status": "success",
+  "packet_number": 123,
+  "iaq_class": 2,
+  "recommendation": "🟡 Удовл."
 }
+```
 
 6.  Переобучение (опционально)
-    - По запросу /retrain модель переобучается на последних N записях из БД.
-    - Сохраняет обновлённую модель и скалер
+    - По запросу `POST /retrain` модель переобучается на последних N записях из БД (`limit`) или на CSV-файле из каталога `data/` (`csv_file`).
+    - Сохраняет обновлённую модель (вместе со скалером) и `metadata.json`.
 
 **2. Подробная логика работы пайплайна:**
 
 1\. Обучение модели
 
-После запуска python air_quality_ml.py, класс:
+Команда `poetry run airquality-train --data data/<файл>.csv`:
 
 - читает CSV
 - делает AutoML-подбор через RandomizedSearchCV
-- сохраняет модель в artifacts/
+- сохраняет модель в artifacts/ (`air_quality_model.joblib` + `metadata.json`: версия, метрики, хэш данных, версия sklearn)
 - пишет отчёт в reports/
 - пишет метаданные и эксперименты в monitoring/
 
 2\. Работа Flask-сервера
 
-Когда Flask получает запрос на /predict, модель:
+Когда ML-сервис получает запрос на /predict, он проверяет входные данные (pydantic; ошибка → 400) и:
 
 - делает предсказание
 - пишет строку в monitoring/predictions.jsonl
@@ -104,7 +99,7 @@ json
 
 Когда вызываем /monitoring/drift, сервер:
 
-- сравнивает два CSV
+- сравнивает два CSV из каталога `data/` (передаются только имена файлов, выход за пределы каталога запрещён)
 - строит список признаков с PSI-подобной оценкой
 - сохраняет отчёт в monitoring/drift_YYYYMMDD_HHMMSS.csv
 
@@ -117,27 +112,27 @@ json
 
 1\. Extract (извлечение)
 
-- Источник: JSON‑запросы от ESP32 (HTTP POST /data).
-- Метаданные: room_id, date, time.
-- Сырые данные: 15+ полей датчиков (temp, hum, mq7, ens_co2 и др.).
+- Источник: JSON‑запросы от ESP32 (HTTP POST /data).
+- Метаданные: room_id, date, time.
+- Сырые данные: 15+ полей датчиков (temp, hum, mq7, ens_co2 и др.).
 
 2\. Transform (преобразование)
 
 - Вычисление признаков:
-   - season — по месяцу из date (get_season_by_month).
-   - weekday — день недели (isoweekday()).
+   - season — по месяцу из date (get_season_by_month).
+   - weekday — день недели (isoweekday()).
 - Очистка данных:
-   - замена -1 → среднее значение по столбцу (в preprocess_features);
-   - приведение типов (int, float) и подстановка дефолтов (safe_convert).
-- Масштабирование: StandardScaler (обучается при первом обучении модели).
-- Прогноз: классификация iaq_class (0–5) + вероятности.
-- Пост‑обработка: генерация текстовой рекомендации (get_recommendation).
+   - замена -1 и пропусков → заранее рассчитанные средние `DEFAULT_MEANS` (в `preprocess_features`);
+   - приведение типов (int, float) и подстановка значений по умолчанию (`build_measurement_record`).
+- Масштабирование: StandardScaler внутри пайплайна модели (обучается вместе с ней).
+- Прогноз: классификация iaq_class (0–5) + вероятности.
+- Пост‑обработка: генерация текстовой рекомендации (get_recommendation).
 
 3\. Load (загрузка)
 
-- Приёмник: таблица sensor.data в PostgreSQL.
-- Поля: все сырые и вычисленные признаки + iaq_class, iaq_proba, packet_count.
-- Формат: структурированная запись с временными метками и метаданными комнаты.
+- Приёмник: таблица sensor.data в PostgreSQL.
+- Поля: все сырые и вычисленные признаки + iaq_class, iaq_proba, packet_count.
+- Формат: структурированная запись с временными метками и метаданными комнаты.
 
 ---
 
@@ -145,32 +140,33 @@ json
 
 Модель: RandomForestClassifier (sklearn)
 
-Гиперпараметры:
-· n_estimators=200 — 200 деревьев;
-· max_depth=15 — ограничение глубины;
-· random_state=42 — воспроизводимость;
-· class_weight='balanced' — учёт дисбаланса классов.
+Пайплайн: SimpleImputer (медиана) → StandardScaler → RandomForestClassifier (`random_state=42`, `n_jobs=-1`).
 
-Вход: 16 признаков (см. feature_columns).
+Гиперпараметры подбираются AutoML (RandomizedSearchCV, метрика `f1_macro`):
 
-Выход: класс iaq_class (0–5):
-· 0: «Отлично»;
-· 1: «Хорошо»;
-· 2: «Удовлетворительно»;
-· 3: «Плохо»;
-· 4: «Очень плохо»;
+- быстрый режим (`FAST_MODE=true`): n_estimators ∈ {80, 120}, max_depth ∈ {10, 15}, min_samples_split ∈ {2, 4}, min_samples_leaf ∈ {1, 2}, max_features = sqrt; `n_iter = AUTOML_ITER` (по умолчанию 3), `cv = 2`;
+- полный режим (`airquality-train --full`): n_estimators ∈ {100, 150, 200}, max_depth ∈ {10, 15, 20}, max_features ∈ {sqrt, log2}, bootstrap ∈ {True, False}; `n_iter = 5`, `cv = 3`.
+
+Вход: 16 признаков (`FEATURE_COLUMNS` в `src/airquality/constants.py`).
+
+Выход: класс iaq_class (0–5):  
+· 0: «Отлично»;  
+· 1: «Хорошо»;  
+· 2: «Удовлетворительно»;  
+· 3: «Плохо»;  
+· 4: «Очень плохо»;  
 · 5: «АВАРИЯ!».
 
 Оценка: classification_report (точность, полнота, F1).
 
-Сохранение: joblib (модель + скалер).
+Сохранение: joblib — единый объект Pipeline (предобработка + модель) и паспорт модели `metadata.json`.
 
-Особенности:
-· обработка пропусков (-1 → среднее);
-· инкрементальное обучение (/retrain из БД);
-· вероятностный вывод (predict_proba) для интерпретации;
-· быстрый режим подбора: RandomizedSearchCV с n_iter=3–5, cv=2, ограниченное пространство гиперпараметров (n_estimators , max_depth , min_samples_split , min_samples_leaf ), n_jobs=1;
-· режим продакшн: online — только predict() в Flask; offline — полное AutoML по расписанию;
+Особенности:  
+· обработка пропусков (-1 → среднее);  
+· переобучение по запросу (`/retrain` из БД или CSV);  
+· вероятностный вывод (predict_proba) для интерпретации;  
+· быстрый режим подбора: ограниченное пространство гиперпараметров, `n_iter=3`, `cv=2`;  
+· режим продакшн: online — только `predict()` в ML-сервисе; offline — обучение командой `airquality-train` (вручную или по расписанию).
 
 **Отчет по метрикам с применением AutoML:**
 
@@ -193,7 +189,7 @@ json
 Модель RandomForest показала устойчиво хорошие показатели по всем метрикам. Преимущества такого подхода:
 
 1. отличные показатели
-2. не нужно масштабировать, значит проще внедрить
+2. не требует масштабирования признаков, значит проще внедрить (StandardScaler в пайплайне оставлен для единообразия предобработки)
 3. не чувствительна к мультиколлинеарности
 4. быстро обучается
 5. дает интерпретацию результата, на последней картинке коэффициенты, которые дала модель. Видно, какой параметр сильнее будет влиять
@@ -206,385 +202,260 @@ json
 
 Важно не просто иметь высокий процент угадывания класса, но еще и точно угадывать редкие классы (например класс авария встретится редко но очень важно его отловить)
 
-Лог эксперимента:
+Лог эксперимента (обучение на полном датасете, 1 053 970 строк):
 
-{"timestamp": "2026-05-29T23:09:42.854997", "rows": 1053970, "best_params": {"clf_\_n_estimators": 120, "clf_\_min_samples_split": 2, "clf_\_min_samples_leaf": 2, "clf_\_max_features": "sqrt", "clf_\_max_depth": 10, "clf_\_bootstrap": true}, "train_accuracy": 0.9323308538193686, "test_accuracy": 0.9303538051367686, "train_f1_macro": 0.9076681161451852, "test_f1_macro": 0.9056605302755936}
+```json
+{"timestamp": "2026-05-29T23:09:42.854997", "rows": 1053970, "best_params": {"clf__n_estimators": 120, "clf__min_samples_split": 2, "clf__min_samples_leaf": 2, "clf__max_features": "sqrt", "clf__max_depth": 10, "clf__bootstrap": true}, "train_accuracy": 0.9323308538193686, "test_accuracy": 0.9303538051367686, "train_f1_macro": 0.9076681161451852, "test_f1_macro": 0.9056605302755936}
+```
 
 ---
 
-## Тестирование ML-модели ##
-
-1. Модель
-
-Проверяется сам класс AirQualityPredictor:
-
-- модель загружается;
-- preprocess_features() корректно заменяет -1 и заполняет пропуски;
-- predict() возвращает iaq_class, probabilities, recommendation;
-- fit() реально обучает модель и сохраняет артефакты.
-
-2. API Flask
-
-Проверяются HTTP-эндпоинты:
-
-- GET /status;
-- POST /predict;
-- POST /retrain;
-
-3. Мониторинг
-
-Проверяется, что система пишет артефакты:
-
-- reports/train*report*\*.txt и .json;
-- monitoring/experiments.jsonl;
-- monitoring/predictions.jsonl;
-- monitoring/drift\_\*.csv.
-
-### Инструкции ###
-Тестирование реализовано с помощью pytest. Тесты находятся в папке tests/:
-```
-test_air_quality_predictor.py - загрузка модели, preprocess_features(), predict(), fit()
-test_api.py                   - тесты Flask-эндпоинтов
-test_monitoring.py            - проверка записи артефактов
-
-Запуск тестов: pytest tests/ -v
-```
----
-
-## Docker-контейнеризация ##
-
-Структура проекта:
+## Структура проекта ##
 
 ```text
 MLOps_AirQuality/
-├── docker-compose.yml
-├── .github/
-│   └── workflows/
-│       └── ci-cd.yml
-├── TESTS/
-│   ├── requirements.txt
-│   ├── test_air_quality_ml.py
-│   └── test_flask_api.py
-├── FRONTEND/
-│   └── web-server/
-│       └── server.py          # основной Flask-сервер (порт 5000)
-├── ML/
-│   ├── Dockerfile
-│   ├── requirements.txt
-│   ├── air_quality_ml.py      # AirQualityPredictor + Flask (порт 5001)
-│   ├── artifacts/
-│   ├── monitoring/
-│   ├── reports/
-│   └── testdata/
-└── sql/
-    └── init.sql
-```
-#### ML-сервис Dockerfile (ML/Dockerfile)
-```text
-FROM python:3.10-slim
-
-WORKDIR /app
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl \
-    postgresql-client \
-    gcc \
-    && rm -rf /var/lib/apt/lists/*
-
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
-COPY . .
-
-RUN mkdir -p artifacts monitoring reports
-
-EXPOSE 5001
-
-HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD curl -f http://localhost:5001/monitoring/health || exit 1
-
-CMD ["python", "air_quality_ml.py"]
+├── src/airquality/              # Python-пакет проекта
+│   ├── config.py                # настройки из переменных окружения / .env
+│   ├── constants.py             # признаки, классы IAQ, значения по умолчанию
+│   ├── logging_config.py        # логирование
+│   ├── cli.py                   # команды airquality-train / -serve-ml / -serve-web
+│   ├── ml/                      # ML-ядро: признаки, предобработка, пайплайн, обучение,
+│   │                            # реестр модели, отчёты, трекинг экспериментов, дрейф
+│   ├── db/                      # подключение к PostgreSQL и запросы
+│   ├── ml_service/              # Flask-API ML-сервиса (порт 5001)
+│   └── web/                     # основной веб-сервер и API дашборда (порт 5000)
+├── tests/
+│   ├── unit/                    # модульные тесты
+│   └── integration/             # тесты HTTP-API и артефактов обучения
+├── docker/                      # ml.Dockerfile, web.Dockerfile
+├── sql/init.sql                 # схема БД (выполняется при первом запуске PostgreSQL)
+├── scripts/plot_roc_auc.py      # графики сравнения моделей для отчёта
+├── DA/                          # генератор датасета и исходные SQL-скрипты
+├── images/                      # иллюстрации для README
+├── data/  artifacts/  reports/  monitoring/   # создаются при работе, в Git не хранятся
+├── .github/workflows/ci-cd.yml  # CI/CD
+├── .vscode/                     # общие настройки VS Code
+├── pyproject.toml  poetry.lock  poetry.toml   # зависимости (Poetry)
+├── .pre-commit-config.yaml      # проверки перед коммитом
+├── .env.example                 # шаблон настроек
+└── docker-compose.yml
 ```
 
-#### Главный Flask-сервис Dockerfile (FRONTEND/web-server/Dockerfile)
-```text
-FROM python:3.10-slim
+Датасет и обученная модель в репозитории не хранятся: модель воспроизводится командой обучения, датасет генерируется скриптом `DA/gen2.py`. Положите CSV в каталог `data/`.
 
-WORKDIR /app
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl \
-    postgresql-client \
-    && rm -rf /var/lib/apt/lists/*
-
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
-COPY . .
-
-EXPOSE 5000
-
-HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
-    CMD curl -f http://localhost:5000/health || exit 1
-
-CMD ["python", "server.py"]
-```
-
-#### docker-compose.yml
-```text
-version: '3.8'
-
-services:
-  postgres:
-    image: postgres:15-alpine
-    container_name: air_quality_db
-    environment:
-      POSTGRES_DB: AirQualityMLDB
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: 1187
-      POSTGRES_PORT: 5432
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-      - ./sql/init.sql:/docker-entrypoint-initdb.d/init.sql
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    restart: unless-stopped
-
-  ml-service:
-    build:
-      context: ./ML
-      dockerfile: Dockerfile
-    container_name: air_quality_ml
-    ports:
-      - "5001:5001"
-    environment:
-      - FAST_MODE=True
-      - DB_HOST=postgres
-      - DB_PORT=5432
-      - DB_NAME=AirQualityMLDB
-      - DB_USER=postgres
-      - DB_PASSWORD=1187
-    volumes:
-      - ./ML/artifacts:/app/artifacts
-      - ./ML/reports:/app/reports
-      - ./ML/monitoring:/app/monitoring
-    depends_on:
-      postgres:
-        condition: service_healthy
-    restart: unless-stopped
-
-  main-service:
-    build:
-      context: ./FRONTEND/web-server
-      dockerfile: Dockerfile
-    container_name: air_quality_main
-    ports:
-      - "5000:5000"
-    environment:
-      - ML_SERVICE_URL=http://ml-service:5001
-      - DB_HOST=postgres
-      - DB_PORT=5432
-      - DB_NAME=AirQualityMLDB
-      - DB_USER=postgres
-      - DB_PASSWORD=1187
-    depends_on:
-      postgres:
-        condition: service_healthy
-      ml-service:
-        condition: service_healthy
-    restart: unless-stopped
-
-volumes:
-  postgres_data:
-```
-
-#### Сборка и запуск
-```text
-# Сборка всех образов
-docker compose build
-
-# Запуск всех сервисов
-docker compose up --build
-
-# Запуск только ML-сервиса в фоне
-docker compose up -d ml-service
-
-# Запуск тестов в контейнере
-docker compose run --rm ml-service pytest /app/../TESTS/ -v
-
-# Остановка
-docker compose down
-
-# Полная очистка (с volumes)
-docker compose down -v
-```
 ---
 
+## Быстрый старт ##
 
-## Инструкции
-#### Настроен workflow в .github/workflows/ci-cd.yml:
-```text
-name: Air Quality Ventilation CI/CD
-
-on:
-  push:
-    branches: [ main, master ]
-  pull_request:
-    branches: [ main, master ]
-
-jobs:
-  test-ml:
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v3
-
-    - name: Setup Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.10'
-
-    - name: Install ML dependencies
-      run: |
-        cd ML
-        pip install -r requirements.txt
-
-    - name: Install test dependencies
-      run: |
-        cd TESTS
-        pip install -r requirements.txt
-
-    - name: Run tests
-      run: |
-        cd TESTS
-        pytest -v
-
-    - name: Run ML pipeline (fast mode)
-      run: |
-        cd ML
-        FAST_MODE=True python air_quality_ml.py &
-        sleep 10
-        curl -f http://localhost:5001/monitoring/health
-
-    - name: Upload model artifacts
-      uses: actions/upload-artifact@v3
-      with:
-        name: ml-models
-        path: ML/artifacts/
-
-  test-main:
-    runs-on: ubuntu-latest
-    needs: test-ml
-    steps:
-    - uses: actions/checkout@v3
-
-    - name: Setup Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.10'
-
-    - name: Install main dependencies
-      run: |
-        cd FRONTEND/web-server
-        pip install -r requirements.txt
-
-    - name: Run tests
-      run: |
-        cd TESTS
-        pytest test_flask_api.py -v
-
-  build-docker:
-    needs: [test-ml, test-main]
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v3
-
-    - name: Build Docker Compose
-      run: |
-        docker compose build
-
-    - name: Test ML container
-      run: |
-        docker compose up -d ml-service postgres
-        sleep 30
-        docker compose exec ml-service pytest /app/../TESTS/ -v
-
-    - name: Test main container
-      run: |
-        docker compose up -d main-service
-        sleep 10
-        curl -f http://localhost:5000/health
-
-    - name: Push to Docker Hub (optional)
-      if: github.ref == 'refs/heads/main'
-      run: |
-        echo "Push to Docker Hub configured"
-```
-
-### Git-команды для публикации
-```text
-cd MLOps_AirQuality
-git init
-git add .
-git commit -m "Initial commit: Air Quality Ventilation System with Docker + CI/CD"
-git branch -M main
-git remote add origin https://github.com/IlyyaNeustroev/MLOps_AirQuality.git
-git push -u origin main
-```
-### Установка и запуск
-#### Локальный запуск (без Docker)
-```text
-git clone https://github.com/IlyyaNeustroev/MLOps_AirQuality.git
-cd MLOps_AirQuality
-
-# Запуск PostgreSQL
-docker run -d \
-  --name air_quality_db \
-  -e POSTGRES_DB=AirQualityMLDB \
-  -e POSTGRES_USER=postgres \
-  -e POSTGRES_PASSWORD=1187 \
-  -p 5432:5432 \
-  postgres:15-alpine
-
-# ML-сервис
-cd ML
-pip install -r requirements.txt
-python air_quality_ml.py
-
-# В другом терминале — главный сервис
-cd ../FRONTEND/web-server
-pip install -r requirements.txt
-python server.py
-
-# Тесты
-cd ../../TESTS
-pip install -r requirements.txt
-pytest -v
-```
-
-#### Запуск через Docker Compose
-```text
-git clone https://github.com/IlyyaNeustroev/MLOps_AirQuality.git
-cd MLOps_AirQuality
-docker compose up --build
-```
-
-## Разработка (после рефакторинга)
-
-Требования: Python 3.13, Poetry 2.5.1, Git, VS Code.
+Требования: Python 3.13, [Poetry](https://python-poetry.org/docs/) 2.5+, Git. Для запуска в контейнерах — Docker Desktop.
 
 ```powershell
-poetry config virtualenvs.in-project true --local
-poetry install                       # основные + dev-зависимости в .venv
-poetry install --with tracking,viz   # + MLflow и графики (по желанию)
+git clone https://github.com/IlyyaNeustroev/MLOps_AirQuality.git
+cd MLOps_AirQuality
+poetry env use (py -3.13 -c "import sys; print(sys.executable)")   # Linux/macOS: poetry env use python3.13
+poetry install                        # зависимости + dev-инструменты в .venv
 poetry run pre-commit install --install-hooks
-Copy-Item .env.example .env          # затем отредактировать пароль БД
-poetry run pytest --cov
+Copy-Item .env.example .env           # Linux/macOS: cp .env.example .env
 ```
 
-Запуск: `poetry run airquality-train --data data/<файл>.csv`, `poetry run airquality-serve-ml`,
-`poetry run airquality-serve-web`; в Docker — `docker compose up -d --build`.
+В файле `.env` укажите параметры PostgreSQL. Файл `.env` в Git не попадает.
+
+Необязательные группы зависимостей:
+
+```powershell
+poetry install --with tracking        # MLflow (если установлен — эксперименты пишутся и туда)
+poetry install --with viz             # matplotlib, seaborn для scripts/plot_roc_auc.py
+```
+
+### Обучение модели ###
+
+```powershell
+poetry run airquality-train --data data/air_quality_training_dataset_2.csv          # быстрый режим
+poetry run airquality-train --data data/air_quality_training_dataset_2.csv --full   # полный AutoML
+```
+
+Результат: `artifacts/air_quality_model.joblib`, `artifacts/metadata.json`, отчёты в `reports/`, журнал в `monitoring/experiments.jsonl`.
+
+### Запуск сервисов локально ###
+
+```powershell
+poetry run airquality-serve-ml        # ML-сервис:   http://localhost:5001
+poetry run airquality-serve-web       # веб-сервер:  http://localhost:5000
+```
+
+Проверка (имитация пакета от ESP32):
+
+```powershell
+$body = '{"room_id":1,"date":"2026-10-26","time":"10:00:00","temp":22.5,"hum":45,"ens_co2":1500}'
+Invoke-RestMethod -Uri http://localhost:5000/data -Method Post -ContentType 'application/json' -Body $body
+```
+
+### Запуск через Docker Compose ###
+
+```powershell
+docker compose up -d --build --wait
+docker compose logs -f ml-service
+docker compose down          # остановка
+docker compose down -v       # остановка с удалением данных БД
+```
+
+Compose поднимает три сервиса: `postgres` (схема создаётся из `sql/init.sql`), `ml-service` и `main-service`. Параметры берутся из `.env`. Каталоги `artifacts/`, `reports/`, `monitoring/` и `data/` подключаются к ML-сервису как тома, поэтому модель, обученная локально, сразу доступна в контейнере.
+
+---
+
+## Конфигурация ##
+
+Все параметры задаются переменными окружения или в файле `.env` (шаблон — `.env.example`):
+
+| Переменная | По умолчанию | Назначение |
+|---|---|---|
+| `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD` | `localhost`, `5432`, `AirQualityMLDB`, `postgres`, — | подключение к PostgreSQL |
+| `FAST_MODE` | `true` | быстрый режим AutoML |
+| `AUTOML_ITER` | `3` | число итераций RandomizedSearchCV в быстром режиме |
+| `RANDOM_STATE` | `42` | воспроизводимость обучения |
+| `ML_SERVICE_URL` | `http://localhost:5001` | адрес ML-сервиса для веб-сервера |
+| `ML_PORT`, `WEB_PORT` | `5001`, `5000` | порты сервисов |
+| `DATA_DIR`, `ARTIFACTS_DIR`, `REPORTS_DIR`, `MONITORING_DIR` | `data`, `artifacts`, `reports`, `monitoring` | каталоги данных и артефактов |
+| `LOG_LEVEL` | `INFO` | уровень логирования |
+
+---
+
+## API ##
+
+ML-сервис (порт 5001):
+
+| Метод | Путь | Назначение |
+|---|---|---|
+| POST | `/predict` | прогноз класса IAQ по показаниям датчиков |
+| POST | `/retrain` | переобучение: `{"limit": 10000}` — из БД, `{"csv_file": "file.csv"}` — из `data/` |
+| GET | `/status` | загружена ли модель, её метаданные и список признаков |
+| POST | `/monitoring/drift` | дрейф признаков: `{"current_csv": "...", "baseline_csv": "..."}` |
+| GET | `/health`, `/monitoring/health` | проверка работоспособности |
+
+Веб-сервер (порт 5000):
+
+| Метод | Путь | Назначение |
+|---|---|---|
+| POST | `/data` | приём пакета от ESP32, прогноз, запись в БД |
+| GET | `/` | веб-страница с последними показаниями |
+| GET | `/api/data` | последние показания и история IAQ |
+| GET | `/api/analytics`, `/api/monitoring`, `/api/logs` | данные для дашборда |
+| GET, PUT | `/api/control` | целевое состояние вентиляции по комнатам |
+| GET, PUT | `/api/settings` | настройки дашборда (блок `model_info` пока статичный, см. «Дальнейшее развитие») |
+| GET | `/health` | проверка работоспособности |
+
+Ошибки проверки входных данных возвращаются с кодом 400, запрос прогноза при отсутствии модели — с кодом 503.
+
+---
+
+## Тестирование ##
+
+Тесты написаны на pytest и не требуют ни базы данных, ни большой модели: в начале прогона обучается небольшая модель на синтетических данных во временном каталоге.
+
+```text
+tests/
+├── conftest.py                         # общие фикстуры
+├── unit/
+│   ├── test_features.py                # сезон и день недели
+│   ├── test_preprocessing.py           # замена -1 и пропусков, лишние колонки
+│   ├── test_predictor.py               # predict(), рекомендации, работа без модели
+│   ├── test_drift.py                   # расчёт PSI
+│   └── test_web_state.py               # данные комнат не смешиваются
+└── integration/
+    ├── test_ml_api.py                  # /predict, /status, /health, /monitoring/drift, защита путей
+    ├── test_web_api.py                 # /health, /data, ошибочный JSON (БД и ML подменяются)
+    └── test_training_artifacts.py      # модель, metadata.json, отчёты, журналы, воспроизводимость
+```
+
+```powershell
+poetry run pytest                # все тесты
+poetry run pytest --cov          # с отчётом о покрытии (минимум 70 %)
+poetry run pytest -m "not slow"  # без тестов обучения
+```
+
+---
+
+## Качество кода ##
+
+| Инструмент | Назначение | Запуск |
+|---|---|---|
+| [Ruff](https://docs.astral.sh/ruff/) | линтер и форматтер (стиль, ошибки, безопасность, запрет `print`) | `poetry run ruff check --fix .`, `poetry run ruff format .` |
+| [mypy](https://mypy.readthedocs.io/) | строгая проверка типов | `poetry run mypy` |
+| [pre-commit](https://pre-commit.com/) | запуск всех проверок перед коммитом, тестов — перед push | `poetry run pre-commit run --all-files` |
+
+Настройки инструментов находятся в `pyproject.toml`, хуков — в `.pre-commit-config.yaml`. В VS Code проект настроен через `.vscode/`: интерпретатор `.venv`, форматирование при сохранении, тесты в панели Testing, конфигурации отладки.
+
+---
+
+## CI/CD ##
+
+Workflow `.github/workflows/ci-cd.yml` запускается при push и pull request в `main`:
+
+1. `lint-and-test`: установка зависимостей через Poetry, все хуки pre-commit, тесты с покрытием, smoke-тест (обучение на синтетических данных и проверка `/health` ML-сервиса).
+2. `build-docker`: сборка образов, запуск `docker compose` и проверка `/health` обоих сервисов.
+
+Версия Python для CI берётся из файла `.python-version`.
+
+---
+
+## Приведение к production-стандартам ##
+
+Проект доработан по трём задачам: рефакторинг кода ML-проекта, настройка Poetry, pre-commit и линтеров, интеграция виртуального окружения в Git-репозиторий.
+
+### Рефакторинг кода ###
+
+| Было | Стало | Зачем |
+|---|---|---|
+| `ML/air_quality_ml.py` — обучение, API и мониторинг в одном файле | пакет `src/airquality/ml/`: признаки, предобработка, пайплайн, обучение, реестр модели, отчёты, трекинг, дрейф | каждую часть можно тестировать и изменять отдельно |
+| `FRONTEND/web-server/server.py` на 1278 строк | `src/airquality/web/`: приём данных, состояние комнат, HTTP-клиент ML-сервиса, API дашборда | веб-сервер не загружает модель сам, а обращается к ML-сервису по `ML_SERVICE_URL` |
+| пароль БД и адреса в коде | `config.py` (pydantic-settings) + файл `.env` | секреты не попадают в Git, одни и те же образы работают локально и в Docker |
+| `print` | модуль `logging` | уровни логирования, время и источник сообщения |
+| модель загружается при импорте модуля, обучение на 95-МБ CSV при старте сервиса | фабрика `create_app()`, обучение отдельной командой `airquality-train` | быстрый старт сервиса, тесты без реальной модели |
+| запуск `python файл.py` | команды `airquality-train`, `airquality-serve-ml`, `airquality-serve-web`; серверы waitress (Windows) и gunicorn (Docker) | одинаковый запуск везде; встроенный сервер Flask не предназначен для production |
+| тесты зависят от реальной модели и запускаются только из папки `ML` | 37 тестов на синтетических данных, покрытие 85 % | тесты работают на любом компьютере и в CI |
+
+Исправленные ошибки:
+
+- веб-сервер создавал `AirQualityPredictor` с несуществующим параметром `scaler_path`, поэтому ML на нём никогда не работал, а данные без прогноза не сохранялись в БД;
+- данные разных комнат хранились в одном глобальном словаре `last_data` без блокировки и смешивались;
+- `/retrain` принимал от клиента путь к файлу и параметры БД, а `/monitoring/drift` читал любой файл сервера; теперь принимаются только имена файлов внутри `data/`;
+- SQL-запросы с f-строками заменены параметризованными;
+- `FAST_MODE` был жёстко задан в коде, теперь читается из окружения;
+- SQL-скрипты не создавали схему `sensor` и строили индекс по несуществующему столбцу: исправлено в `sql/init.sql`;
+- Dockerfile ссылались на отсутствующие `requirements.txt`, compose — на отсутствующий `sql/init.sql`;
+- зависимости обновлены для Python 3.13: старые версии numpy 1.26, pandas 2.2.2, scikit-learn 1.5.1 не имеют сборок под 3.13.
+
+### Poetry, pre-commit и линтеры ###
+
+- **Poetry** — зависимости описаны в `pyproject.toml`, точные версии с хэшами зафиксированы в `poetry.lock`. Группы: основная (сервисы), `dev` (ruff, mypy, pytest, pre-commit), необязательные `tracking` (MLflow) и `viz` (графики).
+- **Ruff** — линтер и форматтер: стиль, сортировка импортов, типичные ошибки, проверки безопасности (bandit), запрет `print`, правила pandas и numpy.
+- **mypy** — строгая проверка типов (`strict = true`).
+- **pre-commit** — перед каждым коммитом: проверка YAML/TOML/JSON, пробелов и окончаний строк, конфликтов регистра имён, приватных ключей, файлов больше 1 МБ, ruff, mypy, соответствия `poetry.lock`; перед push — тесты.
+- **CI** — те же проверки повторяются в GitHub Actions, поэтому их нельзя обойти локально.
+
+### Виртуальное окружение в репозитории ###
+
+Окружение создаётся в папке `.venv` проекта (`poetry.toml`: `virtualenvs.in-project = true`). Сама папка `.venv` в Git не хранится: в ней бинарные файлы под конкретную ОС. Вместо неё в репозитории лежит всё, что нужно, чтобы собрать точно такое же окружение одной командой `poetry install`:
+
+| Файл | Назначение |
+|---|---|
+| `pyproject.toml` | зависимости и настройки инструментов |
+| `poetry.lock` | точные версии и хэши всех пакетов |
+| `poetry.toml` | окружение в папке проекта |
+| `.python-version` | версия Python (3.13) для разработчиков, CI и Docker |
+| `.vscode/settings.json` | интерпретатор `.venv`, форматирование при сохранении, тесты в панели Testing |
+| `.vscode/extensions.json`, `launch.json`, `tasks.json` | рекомендуемые расширения, конфигурации отладки и задачи |
+| `.gitattributes` | единые окончания строк (LF) на Windows и Linux |
+| `.env.example` | шаблон настроек без секретов |
+
+Датасет и обученная модель также не хранятся в Git: модель воспроизводится командой обучения, а модель, сохранённая под scikit-learn 1.5.1, после обновления зависимостей должна быть переобучена.
+
+---
+
+## Дальнейшее развитие ##
+
+- Разбить модуль `src/airquality/web/dashboard.py` (перенесённый код дашборда) на небольшие функции и снять для него послабления линтеров.
+- Выдавать в `/api/settings` реальные сведения о модели из `GET /status` ML-сервиса вместо статичного блока `model_info`.
+- Версионировать датасет и модели через DVC или Git LFS.
+- Проверить влияние `class_weight="balanced"` на метрику F1 для редкого класса 5.
+- Удалить устаревшую папку `.github/wokrflows` (GitHub Actions её не использует).
