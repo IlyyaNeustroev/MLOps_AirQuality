@@ -145,31 +145,31 @@ json
 
 Модель: RandomForestClassifier (sklearn)
 
-Гиперпараметры:  
-· n_estimators=200 — 200 деревьев;  
-· max_depth=15 — ограничение глубины;  
-· random_state=42 — воспроизводимость;  
+Гиперпараметры:
+· n_estimators=200 — 200 деревьев;
+· max_depth=15 — ограничение глубины;
+· random_state=42 — воспроизводимость;
 · class_weight='balanced' — учёт дисбаланса классов.
 
 Вход: 16 признаков (см. feature_columns).
 
-Выход: класс iaq_class (0–5):  
-· 0: «Отлично»;  
-· 1: «Хорошо»;  
-· 2: «Удовлетворительно»;  
-· 3: «Плохо»;  
-· 4: «Очень плохо»;  
+Выход: класс iaq_class (0–5):
+· 0: «Отлично»;
+· 1: «Хорошо»;
+· 2: «Удовлетворительно»;
+· 3: «Плохо»;
+· 4: «Очень плохо»;
 · 5: «АВАРИЯ!».
 
 Оценка: classification_report (точность, полнота, F1).
 
 Сохранение: joblib (модель + скалер).
 
-Особенности:  
-· обработка пропусков (-1 → среднее);  
-· инкрементальное обучение (/retrain из БД);  
-· вероятностный вывод (predict_proba) для интерпретации;  
-· быстрый режим подбора: RandomizedSearchCV с n_iter=3–5, cv=2, ограниченное пространство гиперпараметров (n_estimators , max_depth , min_samples_split , min_samples_leaf ), n_jobs=1;  
+Особенности:
+· обработка пропусков (-1 → среднее);
+· инкрементальное обучение (/retrain из БД);
+· вероятностный вывод (predict_proba) для интерпретации;
+· быстрый режим подбора: RandomizedSearchCV с n_iter=3–5, cv=2, ограниченное пространство гиперпараметров (n_estimators , max_depth , min_samples_split , min_samples_leaf ), n_jobs=1;
 · режим продакшн: online — только predict() в Flask; offline — полное AutoML по расписанию;
 
 **Отчет по метрикам с применением AutoML:**
@@ -177,18 +177,18 @@ json
 ![Метрики AutoML](images/3.jpg)
 
 Визуализация
-![Метрики по классам](ML/reports/03_class_metrics.png)
+![Метрики по классам](images/reports/03_class_metrics.png)
 
-![Метрики precision и recall](ML/reports/04_precision_vs_recall.png)
+![Метрики precision и recall](images/reports/04_precision_vs_recall.png)
 
 В ходе решения задачи, был рассмотрен также вариант применения чистой модели RandomForestClassifier (в виду требования по производительности системы). При этом были получены такие метрики:
 
 ![Метрики](images/4.jpg)
 
 Визуализация
-![Тепловая карта метрик](ML/reports/01_heatmap_metrics.png)
+![Тепловая карта метрик](images/reports/01_heatmap_metrics.png)
 
-![Метрика f1](ML/reports/02_test_f1_ranking.png)
+![Метрика f1](images/reports/02_test_f1_ranking.png)
 
 Модель RandomForest показала устойчиво хорошие показатели по всем метрикам. Преимущества такого подхода:
 
