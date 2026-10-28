@@ -3,7 +3,7 @@
 default_language_version:
   python: python3.13
 default_install_hook_types: [pre-commit, pre-push]
-exclude: ^(DA/|images/|.*\.(pdf|pptx|docx)$)
+exclude: ^(DA/|images/|doc/|.*\.(pdf|pptx|docx)$)
 
 repos:
   # 1. Базовая гигиена файлов
