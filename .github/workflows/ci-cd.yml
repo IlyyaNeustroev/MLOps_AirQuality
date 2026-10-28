@@ -30,6 +30,9 @@ jobs:
         run: |
           poetry config virtualenvs.in-project true
           poetry install
+          
+      - name: Check Poetry configuration
+        run: poetry check --lock
 
       - name: pre-commit (ruff, mypy, проверки файлов)
         run: poetry run pre-commit run --all-files --show-diff-on-failure
