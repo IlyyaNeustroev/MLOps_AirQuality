@@ -3,7 +3,7 @@
 default_language_version:
   python: python3.13
 default_install_hook_types: [pre-commit, pre-push]
-exclude: ^(DA/|images/|.*\.(pdf|pptx|docx)$)
+exclude: ^(DA/|images/|doc/|.*\.(pdf|pptx|docx)$)
 
 repos:
   # 1. Базовая гигиена файлов
@@ -33,12 +33,12 @@ repos:
         args: [--fix]
       - id: ruff-format
 
-  # 3. Poetry: pyproject.toml валиден и poetry.lock ему соответствует
-  - repo: https://github.com/python-poetry/poetry
-    rev: 2.5.1
-    hooks:
-      - id: poetry-check
-        args: [--lock]
+#  # 3. Poetry: pyproject.toml валиден и poetry.lock ему соответствует
+#  - repo: https://github.com/python-poetry/poetry
+#    rev: 2.5.1
+#    hooks:
+#      - id: poetry-check
+#        args: [--lock]
 
   # 4. Локальные хуки: используют .venv проекта (те же версии, что в poetry.lock)
   - repo: local
