@@ -44,7 +44,7 @@ def hash_dataframe(df: pd.DataFrame) -> str:
 
 
 def train_model(df: pd.DataFrame, config: TrainingConfig) -> TrainingResult:
-    """Обучает пайплайн с подбором гиперпараметров и считает метрики."""
+    """Обучает пайплайн с подбором гиперфпараметров и считает метрики."""
     if TARGET_COLUMN not in df.columns:
         msg = f"Нет целевого столбца {TARGET_COLUMN}"
         raise ValueError(msg)
