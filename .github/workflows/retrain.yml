@@ -1,0 +1,39 @@
+name: Auto Retraining
+
+on:
+  schedule:
+    - cron: '0 2 * * *'  # Запуск каждый день в 2:00
+
+jobs:
+  retrain:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: Install dependencies
+      run: |
+        pip install poetry
+        poetry config virtualenvs.in-project true
+        poetry install
+
+    - name: Run tests
+      run: |
+        poetry run pytest
+
+    - name: Retrain model
+      run: |
+        poetry run python -m airquality.ml.training train  # Предполагаем, что есть такой метод
+
+    - name: Log new model to MLflow
+      run: |
+        poetry run python -m airquality.ml.tracking log_model
+
+    - name: Save new model
+      run: |
+        # Логика сохранения модели
